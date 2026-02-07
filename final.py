@@ -11,9 +11,9 @@ import yagmail
 
 EMAIL_SETTING = {
     "smtp_server": "smtp.qq.com",
-    "sender": "3403489687@qq.com",
-    "auth_code": "ibiqexfhuglidbdd",   
-    "receivers": ["yuz11_4781@qq.com"]
+    "sender": os.getenv("ALARM_EMAIL_SENDER"),
+    "auth_code": os.getenv("ALARM_EMAIL_AUTH"),
+    "receivers": os.getenv("ALARM_EMAIL_RECEIVERS", "").split(",")
 }
 
 
