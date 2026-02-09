@@ -2,13 +2,14 @@ import cv2
 import math
 import time
 import json
+import os  
+import numpy as np  
 from datetime import datetime
 from ultralytics import YOLO
 import yagmail
 
 
 # 邮件配置
-
 EMAIL_SETTING = {
     "smtp_server": "smtp.qq.com",
     "sender": os.getenv("ALARM_EMAIL_SENDER"),
@@ -18,7 +19,6 @@ EMAIL_SETTING = {
 
 
 # 报警配置
-
 ALARM_SETTING = {
     "log_file": "vehicle_person_alarm.log",
     "cool_down": 10    
@@ -26,9 +26,19 @@ ALARM_SETTING = {
 
 LAST_ALARM = {}
 
+# 运动检测配置
+MOTION_SETTING = {
+    "motion_threshold": 500,  
+    "motion_delay": 5,        
+    "model_path": "runs/detect/train4/weights/best.pt"  # 这是我自己训练的YOLO模型（用于检测是否可行），如果人车互斥需要改一下
+}
+
+# 运动检测状态变量
+prev_gray = None  
+obj_motion_timer = {}  
+
 
 # 报警模块
-
 def write_alarm_log(camera_id: str, detail: str, email_ok: bool):
     log_info = {
         "camera_id": camera_id,
@@ -89,14 +99,12 @@ def trigger_vehicle_person_alarm(camera_id: str, detail: str):
 
 
 # 互斥模型参数
-
 IMAGE_HEIGHT = 720
 BASE_SAFE_RADIUS = 80
 SPEED_FACTOR = 30
 
 
 # 系统状态
-
 class SystemState:
     SAFE = 0
     WARNING = 1
@@ -110,7 +118,6 @@ STATE_COLOR = {
 
 
 # 工具函数
-
 def bbox_center(bbox):
     x1, y1, x2, y2 = bbox
     return ( (x1 + x2) / 2, (y1 + y2) / 2 )
@@ -137,15 +144,60 @@ def mutual_exclusion_model(person, vehicle):
     else:
         return d_real, safe_radius, SystemState.SAFE
 
+# 运动检测
+def preprocess_frame(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.GaussianBlur(gray, (21, 21), 0)
+
+def judge_vehicle_motion(frame, vehicle_bbox, vehicle_id, curr_gray, thresh):
+    global obj_motion_timer
+    x1, y1, x2, y2 = map(int, vehicle_bbox)
+    # 计算车辆区域内的运动像素
+    obj_thresh = thresh[y1:y2, x1:x2]
+    obj_motion_pixels = np.sum(obj_thresh) / 255
+    is_current_moving = obj_motion_pixels > MOTION_SETTING["motion_threshold"] / 10
+    
+    current_time = time.time()
+    # 判断最终运动状态
+    if is_current_moving:
+        obj_motion_timer[vehicle_id] = current_time
+        is_moving = "运动中（延迟中）"
+        motion_color = (255, 0, 0)  # 蓝色__运动
+    else:
+        if vehicle_id in obj_motion_timer:
+            elapsed_time = current_time - obj_motion_timer[vehicle_id]
+            if elapsed_time < MOTION_SETTING["motion_delay"]:
+                is_moving = f"运动中（剩余{int(MOTION_SETTING['motion_delay'] - elapsed_time)}秒）"
+                motion_color = (255, 0, 0)
+            else:
+                del obj_motion_timer[vehicle_id]
+                is_moving = "静止"
+                motion_color = (128, 128, 128)  # 灰色__静止
+        else:
+            is_moving = "静止"
+            motion_color = (128, 128, 128)
+    
+    # 在车辆框下方标注运动状态
+    cv2.putText(
+        frame,
+        f"运动状态：{is_moving}",
+        (x1, y2 + 20),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        motion_color,
+        2
+    )
+    return False if is_moving == "静止" else True
+
 
 # 主程序
-
 if __name__ == "__main__":
     model = YOLO("yolov8n.pt")
+    motion_model = YOLO(MOTION_SETTING["model_path"])
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
     camera_id = "CAM_01"
-
+    
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -166,6 +218,23 @@ if __name__ == "__main__":
             elif cls_name in ["truck", "car", "bus"]: 
                 vehicles.append({"bbox": bbox})
 
+        # 车辆运动检测逻辑
+        if prev_gray is None:
+            prev_gray = preprocess_frame(frame)
+        else:
+            curr_gray = preprocess_frame(frame)
+            frame_diff = cv2.absdiff(prev_gray, curr_gray)
+            thresh = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)[1]
+            thresh = cv2.dilate(thresh, None, iterations=2)
+            
+            # 遍历车辆判断运动状态
+            for j, v in enumerate(vehicles):
+                vehicle_id = f"vehicle_{j}"
+                is_vehicle_moving = judge_vehicle_motion(frame, v["bbox"], vehicle_id, curr_gray, thresh)
+            
+            prev_gray = curr_gray
+
+        # 人车互斥判断和可视化
         for i, p in enumerate(persons):
             for j, v in enumerate(vehicles):
                 distance, safe_radius, state = mutual_exclusion_model(p, v)
@@ -195,6 +264,17 @@ if __name__ == "__main__":
                     2
                 )
 
+        # 添加运动检测配置标注
+        cv2.putText(
+            frame,
+            f"运动延迟：{MOTION_SETTING['motion_delay']}秒",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (255, 0, 0),
+            2
+        )
+
         cv2.imshow("Human-Vehicle Mutual Exclusion System", frame)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -202,5 +282,3 @@ if __name__ == "__main__":
 
     cap.release()
     cv2.destroyAllWindows()
-
-# "C:\Program Files\Python311\python.exe" final.py
