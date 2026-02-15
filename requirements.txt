@@ -1,0 +1,5 @@
+opencv-python>=4.7.0
+numpy>=1.25.0
+ultralytics>=8.0.0
+yagmail>=0.15.0
+paho-mqtt>=1.6.1
