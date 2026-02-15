@@ -1,5 +1,26 @@
 # 人车互斥安全监测系统
 
+## 结构
+```
+human-vehicle-exclusion/
+├─ README.md
+├─ .gitignore
+├─ requirements.txt
+├─ src/
+│   ├─ __init__.py
+│   ├─ core.py              # 主程序
+│   ├─ calculator.py        # 距离计算、透视矩阵、bbox中心点
+│   ├─ alarmer.py           # 报警逻辑（邮件+日志+冷却机制）
+│   ├─ motion_detector.py   # 车辆运动检测
+│   ├─ utils.py             # 工具函数（写日志、邮箱初始化等通用函数）
+│   └─ config.py            # 全局配置（邮箱、报警阈值、测距模式、MQTT等）
+├─ examples/
+│   └─ run_demo.py          # 演示如何调用核心功能
+├─ tests/
+│   └─ test_alarm.py        # 告警逻辑单元测试示例
+└─ distance.md          # 新测距/算法说明文档
+```
+
 ## 项目简介
 你提供的这个项目是一套基于YOLOv8的实时人车互斥安全监测系统，能够通过摄像头实时检测画面中的行人和车辆，计算二者之间的实际距离，并在距离低于安全阈值时触发邮件告警和MQTT消息推送，同时具备车辆运动状态检测功能，适用于工厂、园区等需要人车安全管控的场景。
 
