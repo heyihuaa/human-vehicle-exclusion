@@ -133,8 +133,6 @@ python 你的脚本名.py
 {
   "device_id": "FORK-001",
   "alarm": 1,
-  "driver_present": 1,
-  "outer_intrusion": 1,
   "timestamp": "2026-02-15 10:00:00"
 }
 ```
