@@ -54,8 +54,7 @@ def main():
                 if state == 2:  # DANGER
                     detail = f"人员{i} 与车辆{j} 实际距离 {d_real:.2f}m，低于安全阈值 {ALARM_DISTANCE_M}m"
                     trigger_vehicle_person_alarm(camera_id, detail)
-                    payload = {"device_id": DEVICE_ID, "alarm": 1, "driver_present": 1, "outer_intrusion": 1,
-                               "timestamp": json.dumps(d_real)}
+                    payload = {"device_id": DEVICE_ID, "alarm": 1, "timestamp": json.dumps(d_real)}
                     mqtt_client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
                     print("[MQTT] 已发布报警")
 
