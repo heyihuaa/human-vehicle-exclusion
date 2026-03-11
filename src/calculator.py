@@ -1,42 +1,102 @@
 import math
 import numpy as np
-from .config import DISTANCE_MODE, PIXELS_PER_METER, ALARM_DISTANCE_M, WARNING_DISTANCE_M
-from .config import CALIB_PIXEL_POINTS, CALIB_REAL_POINTS, SystemState
+import cv2
+from config import PHYSICS, CALIB_PIXEL_POINTS, CALIB_REAL_POINTS, SystemState
 
 def bbox_bottom_center(bbox):
     x1, y1, x2, y2 = bbox
-    return ((x1 + x2)/2, y2)
-
-def pixel_distance(p1, p2):
-    return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
-
-def compute_real_distance(person_bbox, vehicle_bbox, H=None):
-    if DISTANCE_MODE == "homography" and H is not None:
-        pt1 = pixel_to_ground(bbox_bottom_center(person_bbox), H)
-        pt2 = pixel_to_ground(bbox_bottom_center(vehicle_bbox), H)
-        d_real = math.hypot(pt1[0]-pt2[0], pt1[1]-pt2[1])
-        return d_real, bbox_bottom_center(person_bbox), bbox_bottom_center(vehicle_bbox)
-    else:
-        d_pixel = pixel_distance(bbox_bottom_center(person_bbox), bbox_bottom_center(vehicle_bbox))
-        d_real = d_pixel / PIXELS_PER_METER
-        return d_real, bbox_bottom_center(person_bbox), bbox_bottom_center(vehicle_bbox)
+    return ((x1 + x2) / 2, y2)
 
 def compute_homography_matrix():
-    import cv2
     return cv2.getPerspectiveTransform(CALIB_PIXEL_POINTS, CALIB_REAL_POINTS)
 
 def pixel_to_ground(point, H):
-    import cv2
     pt = np.float32([[point[0], point[1]]]).reshape(-1, 1, 2)
     transformed = cv2.perspectiveTransform(pt, H)
     return (transformed[0][0][0], transformed[0][0][1])
 
-def mutual_exclusion_model(person_bbox, vehicle_bbox, H=None):
-    d_real, pt_person, pt_vehicle = compute_real_distance(person_bbox, vehicle_bbox, H)
-    if d_real <= ALARM_DISTANCE_M:
+def calculate_dynamic_braking_distance(vx_px, vy_px, p_pixel, H):
+    """
+    根据车辆在像素空间的速度矢量，映射到真实世界计算 ISO 制动距离，
+    并返回该方向延伸制动距离在像素画面上的投影结束点坐标
+    """
+    if math.hypot(vx_px, vy_px) < 2.5:
+        return PHYSICS["MIN_SAFE_RADIUS"], p_pixel, 0.0
+
+    p_next_pixel = (p_pixel[0] + vx_px, p_pixel[1] + vy_px)
+    p_ground = pixel_to_ground(p_pixel, H)
+    p_next_ground = pixel_to_ground(p_next_pixel, H)
+
+    vector_x = p_next_ground[0] - p_ground[0]
+    vector_y = p_next_ground[1] - p_ground[1]
+    dist_per_frame = math.hypot(vector_x, vector_y)
+
+    v_real = dist_per_frame * PHYSICS["FPS"]
+    v_real = min(v_real, 10.0)
+
+    if v_real < 0.2:
+        return PHYSICS["MIN_SAFE_RADIUS"], p_pixel, 0.0
+
+    react_dist = v_real * PHYSICS["T_REACTION"]
+    brake_dist = (v_real ** 2) / (2 * PHYSICS["MU"] * PHYSICS["G"])
+    D_dynamic = PHYSICS["MIN_SAFE_RADIUS"] + react_dist + brake_dist
+
+    direction_x = vector_x / dist_per_frame
+    direction_y = vector_y / dist_per_frame
+
+    real_extend_x = p_ground[0] + direction_x * D_dynamic
+    real_extend_y = p_ground[1] + direction_y * D_dynamic
+
+    H_inv = np.linalg.inv(H)
+    pt_real = np.float32([[real_extend_x, real_extend_y]]).reshape(-1, 1, 2)
+    transformed_back = cv2.perspectiveTransform(pt_real, H_inv)
+    p_end_pixel = (int(transformed_back[0][0][0]), int(transformed_back[0][0][1]))
+
+    return D_dynamic, p_end_pixel, v_real
+
+def mutual_exclusion_model(person_p_real, vehicle_p_real, dynamic_danger_dist):
+    d_real = math.hypot(person_p_real[0] - vehicle_p_real[0], person_p_real[1] - vehicle_p_real[1])
+
+    if d_real <= dynamic_danger_dist:
         state = SystemState.DANGER
-    elif d_real <= WARNING_DISTANCE_M:
+    elif d_real <= dynamic_danger_dist + PHYSICS["WARNING_MARGIN"]:
         state = SystemState.WARNING
     else:
         state = SystemState.SAFE
-    return d_real, state, pt_person, pt_vehicle
+
+    return d_real, state
+
+def draw_potato_envelope(frame, p_start, p_end, danger_dist, state, H):
+    color = STATE_COLOR[state]
+    overlay = frame.copy()
+    pt1_g = pixel_to_ground(p_start, H)
+    H_inv = np.linalg.inv(H)
+
+    def get_perspective_circle_pts(center_g, radius_m, num_pts=36):
+        circle_pts_g = []
+        for i in range(num_pts):
+            angle = 2 * math.pi * i / num_pts
+            x = center_g[0] + radius_m * math.cos(angle)
+            y = center_g[1] + radius_m * math.sin(angle)
+            circle_pts_g.append([x, y])
+        pts_g_arr = np.float32(circle_pts_g).reshape(-1, 1, 2)
+        pts_p_arr = cv2.perspectiveTransform(pts_g_arr, H_inv)
+        return np.int32(pts_p_arr)
+
+    if p_start == p_end or math.hypot(p_end[0]-p_start[0], p_end[1]-p_start[1]) < 10:
+        pass
+    else:
+        pt2_g = pixel_to_ground(p_end, H)
+        start_circle_pts = get_perspective_circle_pts(pt1_g, PHYSICS["MIN_SAFE_RADIUS"])
+        end_circle_pts = get_perspective_circle_pts(pt2_g, PHYSICS["MIN_SAFE_RADIUS"] * 1.2)
+        all_pts = np.vstack((start_circle_pts, end_circle_pts))
+        hull = cv2.convexHull(all_pts)
+        cv2.fillPoly(overlay, [hull], color)
+        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+        cv2.polylines(frame, [hull], isClosed=True, color=color, thickness=2)
+        cv2.line(frame, (int(p_start[0]), int(p_start[1])), (int(p_end[0]), int(p_end[1])), (255, 255, 255), 2)
+
+    cv2.circle(frame, (int(p_start[0]), int(p_start[1])), 6, (0, 0, 255), -1)
+
+# 为了在 draw_potato_envelope 中使用 STATE_COLOR，需要从 config 导入
+from config import STATE_COLOR

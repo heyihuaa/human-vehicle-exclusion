@@ -1,7 +1,6 @@
 import json
-import time
 from datetime import datetime
-from .config import ALARM_SETTING
+from config import ALARM_SETTING
 
 LAST_ALARM = {}
 

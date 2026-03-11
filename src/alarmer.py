@@ -1,12 +1,14 @@
 import yagmail
 import time
-from .config import EMAIL_SETTING, ALARM_SETTING
-from .utils import write_alarm_log, LAST_ALARM
+from config import EMAIL_SETTING, ALARM_SETTING
+from utils import write_alarm_log, LAST_ALARM
 
 def send_alarm_email(camera_id: str, detail: str) -> bool:
+    if not EMAIL_SETTING["sender"] or not EMAIL_SETTING["auth_code"]:
+        return False
     subject = f"【人车互斥告警】{camera_id} 风险触发"
     content = f"""
-告警时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
+告警时间：{time.strftime("%Y-%m-%d %H:%M:%S")}
 摄像头编号：{camera_id}
 告警详情：{detail}
 处理建议：请立即核查现场，避免碰撞事故
@@ -35,7 +37,6 @@ def send_alarm_email(camera_id: str, detail: str) -> bool:
     return False
 
 def trigger_vehicle_person_alarm(camera_id: str, detail: str):
-    import time
     now = time.time()
     if camera_id in LAST_ALARM and now - LAST_ALARM[camera_id] < ALARM_SETTING["cool_down"]:
         print(f"[冷却] {camera_id} 冷却中，跳过告警")
