@@ -1,3 +1,10 @@
+
+"""
+目标追踪模块
+- 卡尔曼滤波：BBoxKalmanFilter(框卡尔曼滤波)
+- 追踪对象：TrackedObject(单个追踪目标)
+- 多目标追踪：SimpleTracker(基于IOU的多目标追踪器)
+"""
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 

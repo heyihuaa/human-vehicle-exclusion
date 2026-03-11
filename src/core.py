@@ -1,3 +1,10 @@
+"""
+主程序入口
+- 视频/摄像头读取：帧获取、预处理
+- 模块调度：调用calculator/motion_detector/utils 完成核心逻辑
+- 可视化：结果绘制、实时展示
+- 报警触发：调用alarmer模块处理报警逻辑
+"""
 import cv2
 import os
 import numpy as np

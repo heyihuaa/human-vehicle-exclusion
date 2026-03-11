@@ -1,3 +1,10 @@
+"""
+核心计算模块
+- 坐标转换：bbox_bottom_center(框底中心点)、compute_homography_matrix(单应性矩阵)、pixel_to_ground(像素转真实坐标)
+- 距离计算：calculate_dynamic_braking_distance(动态制动距离)
+- 互斥判断：mutual_exclusion_model(人车互斥模型)
+- 可视化：draw_potato_envelope(绘制预警区域)
+"""
 import math
 import numpy as np
 import cv2

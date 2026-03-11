@@ -1,3 +1,9 @@
+"""
+报警模块
+- 邮件报警：封装SMTP发送逻辑，支持冷却机制避免频繁报警
+- 日志报警：报警信息写入指定日志文件
+- 状态判断：根据互斥模型结果触发不同级别报警
+"""
 import yagmail
 import time
 from config import EMAIL_SETTING, ALARM_SETTING

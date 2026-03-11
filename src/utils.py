@@ -1,3 +1,9 @@
+"""
+通用工具模块
+- 几何计算：area(框面积)、calculate_iou(交并比)、is_fully_contained(框包含判断)
+- 框转换：bbox_to_z(框转卡尔曼向量)、z_to_bbox(卡尔曼向量转框)
+- 过滤逻辑：filter_person_in_forktruck(过滤叉车内部人员框)
+"""
 import json
 from datetime import datetime
 from config import ALARM_SETTING
